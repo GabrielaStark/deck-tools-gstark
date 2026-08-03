@@ -58,6 +58,15 @@ Un botón por comando. En los dos, **Press Enter** activado.
 Los dos preguntan lo que necesitan, así que ambos botones llevan Enter. No hay que
 teclear nada después de picar.
 
+### Mayúsculas
+
+No importa cómo se escriba: `stark-nuevo` y `STARK-NUEVO` funcionan igual. El
+instalador crea las dos formas apuntando al mismo script, porque Linux distingue
+mayúsculas en los nombres de archivo y los botones a veces tecleaban en altas.
+
+Esto **no** vuelve la terminal insensible a mayúsculas — solo estos comandos aceptan
+ambas escrituras. `LS` y `GIT` siguen sin existir, como debe ser.
+
 ---
 
 ## Cómo se usa, en corto

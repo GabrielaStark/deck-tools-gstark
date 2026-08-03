@@ -41,7 +41,21 @@ for script in "$REPO"/bin/*; do
   nombre=$(basename "$script")
   chmod +x "$script"
   ln -sf "$script" "$DESTINO/$nombre"
-  ok "$nombre"
+
+  # Alias en MAYÚSCULAS apuntando al mismo script. Por qué: los botones del deck a
+  # veces teclean en mayúsculas, y Linux distingue mayúsculas de minúsculas en los
+  # nombres de archivo — así STARK-NUEVO y stark-nuevo funcionan igual.
+  # Esto NO vuelve la terminal insensible a mayúsculas: solo estos comandos aceptan
+  # ambas escrituras; todo lo demás del sistema sigue igual.
+  # PORTABILIDAD: `tr` en vez de ${nombre^^}, que no existe en el bash 3.2 de macOS.
+  # En macOS el sistema de archivos ya es insensible a mayúsculas, así que el enlace
+  # extra simplemente coincide con el que ya está — inofensivo.
+  mayus=$(printf '%s' "$nombre" | tr '[:lower:]' '[:upper:]')
+  if [ "$mayus" != "$nombre" ]; then
+    ln -sf "$script" "$DESTINO/$mayus" 2>/dev/null || true
+  fi
+
+  ok "$nombre   (también responde a $mayus)"
   INSTALADOS=$((INSTALADOS + 1))
 done
 
