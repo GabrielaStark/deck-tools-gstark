@@ -116,7 +116,9 @@ if [ "$NUM_ZOMBIES" -gt 0 ]; then
     aviso "los dejé. Revísalos a mano — pueden contradecir al stark nuevo."
   fi
 else
-  ok "sin zombies: nada de tu stark viejo sobra en el nuevo"
+  # Ojo con la redacción: esto NO dice "ya estabas al día", dice "no hay basura que
+  # tirar". La actualización pasa en el paso siguiente, pase lo que pase aquí.
+  ok "nada obsoleto que limpiar (ningún archivo tuyo sobra en el stark nuevo)"
 fi
 
 # ── 4. Copia el stark nuevo encima ────────────────────────────────────────────
@@ -126,7 +128,7 @@ copiar_contenido "$TMP/stark/templates" "$RAIZ/templates"
 cp "$TMP/stark/docs/documentacion/"*.md   docs/documentacion/
 cp "$TMP/stark/docs/features/README.md"   docs/features/
 cp "$TMP/stark/LICENSE"                   LICENSE.stark
-ok "herramienta actualizada a la última versión"
+ok "stark REEMPLAZADO por la última versión publicada (tu copia vieja quedó atrás)"
 
 # ── 5. Blinda el .gitignore ───────────────────────────────────────────────────
 touch .gitignore
