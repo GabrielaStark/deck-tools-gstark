@@ -1,0 +1,213 @@
+#!/usr/bin/env bash
+#
+# stark-nuevo — arranca un proyecto desde cero usando stark como punto de partida.
+#
+# POR QUÉ EXISTE (y por qué NO es el mismo script que stark-mantenimiento)
+#   En greenfield stark no se copia ENCIMA de un proyecto: stark ES el punto de
+#   partida. Se clona completo y esa carpeta se vuelve tu proyecto. Eso obliga a dos
+#   pasos que en mantenimiento no existen:
+#     1. Cortarle el .git a stark. Sin esto tu proyecto nace apuntando al repo de
+#        stark y tu primer push se iría allá. Es EL error que este script previene.
+#     2. Ignorar más cosas: en greenfield también son herramienta scripts/,
+#        .github/workflows/verificar.yml y requirements-dev.txt (la auto-verificación
+#        del framework, que es de stark, no de tu proyecto).
+#
+# USO
+#   Te paras en la carpeta CONTENEDORA (donde quieres que viva el proyecto) y lo
+#   corres. El script pregunta el nombre; no necesita argumentos.
+#
+#     cd ~/Documentos/STARK
+#     stark-nuevo
+#
+# GITHUB
+#   Si tienes `gh` autenticado, ofrece crear el repo y pushear. Si no, deja el repo
+#   local listo e imprime las dos líneas exactas para que las pegues tú.
+#
+# PORTABILIDAD (Ubuntu y macOS)
+#   Escrito para bash 3.2 (el de fábrica en macOS): sin arrays vacíos bajo `set -u`.
+
+set -euo pipefail
+
+REPO_STARK="https://github.com/GabrielaStark/stark.git"
+USUARIO_GITHUB="GabrielaStark"
+
+# En greenfield la herramienta es todo esto. Ojo: es MÁS que en mantenimiento, porque
+# el proyecto hereda el árbol completo de stark, incluida su auto-verificación.
+IGNORAR="
+.claude/
+templates/
+scripts/
+.github/workflows/verificar.yml
+requirements-dev.txt
+docs/documentacion/
+docs/features/README.md
+LICENSE.stark
+"
+
+ok()    { printf '✅ %s\n' "$*"; }
+info()  { printf '   %s\n' "$*"; }
+aviso() { printf '⚠️  %s\n' "$*"; }
+error() { printf '❌ %s\n' "$*" >&2; exit 1; }
+
+command -v git >/dev/null 2>&1 || error "no encuentro git en el PATH."
+
+printf '\n✨ stark-nuevo — proyecto desde cero\n\n'
+
+# ── 1. Dónde estamos ──────────────────────────────────────────────────────────
+# Crear un proyecto DENTRO de otro repo casi siempre es un accidente (quedaría como
+# subcarpeta del repo padre). Se avisa y se pide confirmación explícita.
+CONTENEDORA=$(pwd)
+if PADRE=$(git rev-parse --show-toplevel 2>/dev/null); then
+  aviso "estás DENTRO de un repo git: $PADRE"
+  info "El proyecto nuevo quedaría como una carpeta de ese repo."
+  printf '   ¿Seguro que aquí? [s/N] › '
+  read -r RESP
+  case "$RESP" in
+    s|S|si|SI|Si|sí|Sí) ;;
+    *) error "cancelado. Muévete a una carpeta fuera del repo y vuelve a correrlo." ;;
+  esac
+fi
+
+# ── 2. Nombre del proyecto ────────────────────────────────────────────────────
+printf '   ¿Cómo se llama el proyecto? › '
+read -r NOMBRE
+NOMBRE=$(printf '%s' "$NOMBRE" | tr -d '[:space:]')
+
+[ -n "$NOMBRE" ] || error "sin nombre no hay proyecto."
+case "$NOMBRE" in
+  *[!A-Za-z0-9._-]*) error "nombre inválido: '$NOMBRE'. Usa letras, números, guiones y puntos." ;;
+  .*)                error "el nombre no puede empezar con punto." ;;
+esac
+[ -e "$NOMBRE" ] && error "ya existe '$NOMBRE' en $CONTENEDORA. Elige otro nombre."
+
+DESTINO="$CONTENEDORA/$NOMBRE"
+printf '\n'
+
+# ── 3. stark se convierte en tu proyecto ──────────────────────────────────────
+info "bajando stark…"
+git clone --quiet "$REPO_STARK" "$DESTINO" 2>/dev/null \
+  || error "no pude clonar stark. ¿Hay internet?"
+cd "$DESTINO"
+
+# EL paso crítico: sin esto el proyecto nace apuntando al repo de stark.
+rm -rf .git
+ok "stark clonado y .git de stark eliminado (nunca podrás pushear a su repo)"
+
+# ── 4. Tu repo, virgen ────────────────────────────────────────────────────────
+git init --quiet
+# `git branch -M main` en vez de `git init --initial-branch`: funciona también con
+# los git viejos que trae macOS de fábrica.
+git branch -M main
+ok "repo nuevo iniciado en rama main (sin remoto todavía)"
+
+# ── 5. Blinda el .gitignore ───────────────────────────────────────────────────
+touch .gitignore
+if [ -s .gitignore ] && [ "$(tail -c1 .gitignore | wc -l)" -eq 0 ]; then
+  echo >> .gitignore
+fi
+
+# PORTABILIDAD: acumulador de texto, no array. En bash 3.2 leer un array vacío con
+# `set -u` activo revienta el script.
+FALTANTES=""
+NUM_FALTANTES=0
+while IFS= read -r entrada; do
+  [ -n "$entrada" ] || continue
+  if ! grep -qxF "$entrada" .gitignore; then
+    FALTANTES="${FALTANTES}${entrada}
+"
+    NUM_FALTANTES=$((NUM_FALTANTES + 1))
+  fi
+done <<EOF
+$IGNORAR
+EOF
+
+if [ "$NUM_FALTANTES" -gt 0 ]; then
+  {
+    echo
+    echo "# Herramienta stark: vive en el disco, no en el repo. Este repo es el"
+    echo "# PROYECTO, no el framework que lo construyó. Agregado por stark-nuevo."
+    printf '%s' "$FALTANTES"
+  } >> .gitignore
+fi
+ok ".gitignore blindado ($NUM_FALTANTES entradas)"
+
+# ── 6. Lo que era de stark y no es tuyo ───────────────────────────────────────
+# El README de stark habla del framework, no de tu proyecto. La licencia MIT de stark
+# se conserva aparte: la exige al quedarse con porciones de la herramienta.
+[ -f LICENSE ] && mv LICENSE LICENSE.stark
+
+cat > README.md <<FIN
+# $NOMBRE
+
+> Proyecto construido con [stark](https://github.com/GabrielaStark/stark) —
+> especificación exhaustiva, implementación mínima.
+
+## Estado
+
+Recién iniciado. Las especificaciones viven en \`docs/\`:
+
+- \`docs/inputs/\` — material de levantamiento (entrevistas, notas, imágenes)
+- \`docs/requirements.md\` — qué se va a construir (EARS)
+- \`docs/design.md\` — cómo
+- \`docs/tasks.md\` — en qué orden
+
+## Arrancar
+
+Abre Claude Code en esta carpeta y corre \`/stark-init\`.
+
+> La herramienta (\`.claude/\`, \`templates/\`, \`scripts/\`) no se versiona: vive en el
+> disco. Para recuperarla en otra máquina, corre \`stark-mantenimiento\` desde la raíz.
+FIN
+ok "README propio y LICENSE.stark separado"
+
+# ── 7. Primer commit ──────────────────────────────────────────────────────────
+# Para que el repo no nazca vacío y el push funcione de inmediato.
+git add -A
+git commit --quiet -m "Esqueleto inicial del proyecto ($NOMBRE)
+
+Estructura SDD de stark. La herramienta queda fuera del repo por .gitignore:
+este repo es el proyecto, no el framework que lo construyó."
+ok "primer commit hecho"
+
+# ── 8. GitHub: automático con gh, a mano sin él ───────────────────────────────
+URL_ESPERADA="https://github.com/$USUARIO_GITHUB/$NOMBRE.git"
+printf '\n'
+
+if command -v gh >/dev/null 2>&1 && gh auth status >/dev/null 2>&1; then
+  printf '   ¿Creo el repo en GitHub? [publico/privado/no] › '
+  read -r VISIBILIDAD
+  case "$VISIBILIDAD" in
+    p|pu|pub|publico|público|public)
+      gh repo create "$NOMBRE" --source=. --remote=origin --push --public \
+        && ok "repo público creado y subido" ;;
+    pr|priv|privado|private)
+      gh repo create "$NOMBRE" --source=. --remote=origin --push --private \
+        && ok "repo privado creado y subido" ;;
+    *)
+      info "sin repo remoto. Cuando lo crees en GitHub, pega:"
+      info ""
+      info "  git remote add origin $URL_ESPERADA"
+      info "  git push -u origin main" ;;
+  esac
+else
+  aviso "no tienes gh (o no está autenticado): el repo remoto lo creas tú."
+  info ""
+  info "1. Ve a https://github.com/new  ·  nombre: $NOMBRE  ·  VACÍO (sin README)"
+  info "2. Regresa aquí y pega:"
+  info ""
+  info "     git remote add origin $URL_ESPERADA"
+  info "     git push -u origin main"
+fi
+
+cat <<FIN
+
+── Listo: $DESTINO ───────────
+
+  cd $NOMBRE
+
+  Abre Claude Code y corre:   /stark-init
+
+  Él te pregunta el caso, prepara el terreno y te dice
+  textualmente cuál es el siguiente comando.
+──────────────────────────────────────────────────────────────
+FIN
