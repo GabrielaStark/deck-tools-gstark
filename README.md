@@ -12,7 +12,7 @@ para que quepan otros después.
 ## Instalar en una máquina nueva
 
 ```bash
-git clone <url-de-este-repo> ~/deck-tools
+git clone https://github.com/GabrielaStark/deck-tools-gstark.git ~/deck-tools
 cd ~/deck-tools
 ./instalar.sh
 ```
