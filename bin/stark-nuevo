@@ -29,7 +29,6 @@
 set -euo pipefail
 
 REPO_STARK="https://github.com/GabrielaStark/stark.git"
-USUARIO_GITHUB="GabrielaStark"
 
 # En greenfield la herramienta es todo esto. Ojo: es MÁS que en mantenimiento, porque
 # el proyecto hereda el árbol completo de stark, incluida su auto-verificación.
@@ -50,6 +49,24 @@ aviso() { printf '⚠️  %s\n' "$*"; }
 error() { printf '❌ %s\n' "$*" >&2; exit 1; }
 
 command -v git >/dev/null 2>&1 || error "no encuentro git en el PATH."
+
+# Nada de usuario hardcodeado: este repo lo puede clonar cualquiera, y hasta la misma
+# persona puede pushear a una organización distinta. Se averigua, y si no se puede, se
+# deja un marcador visible para que nadie copie una URL equivocada.
+detectar_usuario_github() {
+  usuario=""
+  if command -v gh >/dev/null 2>&1; then
+    usuario=$(gh api user --jq .login 2>/dev/null || true)
+  fi
+  if [ -z "$usuario" ]; then
+    # Convención de gh y del viejo hub; si la tienes puesta, la respetamos.
+    usuario=$(git config --get github.user 2>/dev/null || true)
+  fi
+  if [ -z "$usuario" ]; then
+    usuario="TU-USUARIO"
+  fi
+  printf '%s' "$usuario"
+}
 
 printf '\n✨ stark-nuevo — proyecto desde cero\n\n'
 
@@ -170,7 +187,8 @@ este repo es el proyecto, no el framework que lo construyó."
 ok "primer commit hecho"
 
 # ── 8. GitHub: automático con gh, a mano sin él ───────────────────────────────
-URL_ESPERADA="https://github.com/$USUARIO_GITHUB/$NOMBRE.git"
+USUARIO=$(detectar_usuario_github)
+URL_ESPERADA="https://github.com/$USUARIO/$NOMBRE.git"
 printf '\n'
 
 if command -v gh >/dev/null 2>&1 && gh auth status >/dev/null 2>&1; then
@@ -197,6 +215,11 @@ else
   info ""
   info "     git remote add origin $URL_ESPERADA"
   info "     git push -u origin main"
+  if [ "$USUARIO" = "TU-USUARIO" ]; then
+    info ""
+    info "(Para que esa URL salga con tu usuario real, una sola vez:"
+    info " git config --global github.user TU-USUARIO-DE-GITHUB)"
+  fi
 fi
 
 cat <<FIN
