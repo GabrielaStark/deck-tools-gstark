@@ -1,0 +1,155 @@
+#!/usr/bin/env bash
+#
+# stark-mantenimiento — deja la herramienta stark lista en el repo donde estés parada.
+#
+# POR QUÉ EXISTE
+#   Hace las dos únicas cosas que /stark-init NO hace:
+#     1. Traer la herramienta al proyecto (.claude/, templates/, docs/documentacion/).
+#     2. Blindar el .gitignore para que esa herramienta jamás se vaya en un push —
+#        el repo del cliente es el producto, no el framework que lo construyó.
+#   De ahí en adelante manda stark: sustrato, intent.md, hook RDD y constitución los
+#   resuelve /stark-init dentro de Claude Code.
+#
+# EL .git DE STARK NUNCA ENTRA
+#   stark se clona en una carpeta temporal y de ahí se copian SOLO las carpetas de la
+#   herramienta. El temporal se borra al salir. El único .git que existe en tu proyecto
+#   es el tuyo, así que un push siempre va a TU repo.
+#
+# USO
+#   Te paras en el proyecto (o en cualquier subcarpeta suya) y lo corres sin argumentos.
+#
+# ES IDEMPOTENTE
+#   Correrlo otra vez = actualizar stark a la última versión. No duplica líneas en
+#   .gitignore ni toca tus specs.
+#
+# PORTABILIDAD (Ubuntu y macOS)
+#   Escrito para bash 3.2 (el que trae macOS de fábrica) y para el `cp` de BSD:
+#   sin arrays vacíos bajo `set -u` y sin `cp -r origen/.`, que se comportan distinto
+#   en cada sistema. Ver los comentarios marcados PORTABILIDAD.
+
+set -euo pipefail
+
+REPO_STARK="https://github.com/GabrielaStark/stark.git"
+
+# Lo que es HERRAMIENTA: vive en tu disco, nunca en el repo del proyecto.
+# LICENSE.stark va aquí también: el aviso MIT acompaña a la herramienta, y como la
+# herramienta no se redistribuye desde este repo, tampoco tiene por qué versionarse.
+IGNORAR="
+.claude/
+templates/
+docs/documentacion/
+docs/features/README.md
+LICENSE.stark
+"
+
+ok()    { printf '✅ %s\n' "$*"; }
+info()  { printf '   %s\n' "$*"; }
+aviso() { printf '⚠️  %s\n' "$*"; }
+error() { printf '❌ %s\n' "$*" >&2; exit 1; }
+
+# PORTABILIDAD: `cp -R origen/. destino` fusiona en GNU pero se comporta distinto en el
+# cp de BSD (macOS). tar hace lo mismo igual en los dos: copia el CONTENIDO de una
+# carpeta dentro de otra, respetando lo que ya había.
+copiar_contenido() {
+  ( cd "$1" && tar cf - . ) | ( cd "$2" && tar xf - )
+}
+
+# ── 1. Piso firme: tiene que haber un repo git ────────────────────────────────
+# Sin repo no hay .gitignore que blindar, y sin blindaje el script haría más daño que
+# bien: dejaría la herramienta suelta y lista para colarse a un commit.
+command -v git >/dev/null 2>&1 || error "no encuentro git en el PATH."
+
+if ! RAIZ=$(git rev-parse --show-toplevel 2>/dev/null); then
+  error "aquí no hay repositorio git ($(pwd)).
+   Párate dentro del proyecto que vas a mantener y vuelve a correrlo.
+   ¿Es un proyecto nuevo desde cero? Ese es otro botón: stark-nuevo."
+fi
+cd "$RAIZ"
+printf '\n🔧 stark → %s\n\n' "$RAIZ"
+
+# ── 2. Baja la herramienta a un temporal ──────────────────────────────────────
+TMP=$(mktemp -d)
+trap 'rm -rf "$TMP"' EXIT
+
+info "bajando stark…"
+git clone --depth 1 --quiet "$REPO_STARK" "$TMP/stark" 2>/dev/null \
+  || error "no pude clonar stark. ¿Hay internet?"
+
+# ── 3. Copia a la raíz del proyecto ───────────────────────────────────────────
+mkdir -p .claude templates docs/features docs/documentacion
+
+copiar_contenido "$TMP/stark/.claude"   "$RAIZ/.claude"
+copiar_contenido "$TMP/stark/templates" "$RAIZ/templates"
+cp "$TMP/stark/docs/documentacion/"*.md   docs/documentacion/
+cp "$TMP/stark/docs/features/README.md"   docs/features/
+cp "$TMP/stark/LICENSE"                   LICENSE.stark
+
+ok "herramienta en la raíz: .claude/ · templates/ · docs/documentacion/"
+
+# ── 4. Blinda el .gitignore (solo lo que falte) ───────────────────────────────
+touch .gitignore
+# Si el archivo no termina en salto de línea, la primera entrada nueva se pegaría a la
+# última línea existente y quedaría inservible.
+if [ -s .gitignore ] && [ "$(tail -c1 .gitignore | wc -l)" -eq 0 ]; then
+  echo >> .gitignore
+fi
+
+# PORTABILIDAD: acumulador de texto en vez de array. En bash 3.2 (macOS), leer un array
+# vacío con `set -u` activo revienta el script.
+FALTANTES=""
+NUM_FALTANTES=0
+while IFS= read -r entrada; do
+  [ -n "$entrada" ] || continue
+  if ! grep -qxF "$entrada" .gitignore; then
+    FALTANTES="${FALTANTES}${entrada}
+"
+    NUM_FALTANTES=$((NUM_FALTANTES + 1))
+  fi
+done <<EOF
+$IGNORAR
+EOF
+
+if [ "$NUM_FALTANTES" -gt 0 ]; then
+  {
+    echo
+    echo "# Herramienta stark: vive en el disco, no en el repo. Este repo es el"
+    echo "# PROYECTO, no el framework que lo construyó. Agregado por stark-mantenimiento."
+    printf '%s' "$FALTANTES"
+  } >> .gitignore
+  ok ".gitignore blindado ($NUM_FALTANTES entrada(s) nueva(s))"
+else
+  ok ".gitignore ya estaba blindado"
+fi
+
+# Caso raro pero real: el proyecto ya versionaba su propio .claude/ (settings, agentes
+# propios). .gitignore no des-rastrea lo ya rastreado, así que esos archivos siguen en
+# el repo y hay que decirlo — no es un error, pero no debe pasar desapercibido.
+YA_RASTREADO=$(git ls-files .claude templates 2>/dev/null | head -5 || true)
+if [ -n "$YA_RASTREADO" ]; then
+  aviso "este repo YA versionaba archivos dentro de .claude/ o templates/:"
+  printf '%s\n' "$YA_RASTREADO" | while IFS= read -r f; do info "$f"; done
+  info "gitignore no des-rastrea lo ya commiteado."
+  info "Si trae stark viejo commiteado, ese es otro botón: stark-actualizar."
+fi
+
+# ── 5. Prueba de fuego: ¿la herramienta es invisible para git? ────────────────
+SUCIO=$(git status --porcelain)
+printf '\n'
+if [ -z "$SUCIO" ]; then
+  ok "git status limpio: la herramienta no existe para git."
+else
+  aviso "git ve estos cambios (el .gitignore modificado es normal la primera vez):"
+  git status --porcelain | head -20
+  info "Si aquí aparece algo de .claude/ o templates/, avísame — algo falló."
+fi
+
+cat <<'FIN'
+
+── Ya quedó. Ahora abre Claude Code y corre: ─────────────────
+
+       /stark-init
+
+  Él te pregunta el caso, arma el sustrato, crea el intent.md
+  y te dice textualmente cuál es el siguiente comando.
+──────────────────────────────────────────────────────────────
+FIN
