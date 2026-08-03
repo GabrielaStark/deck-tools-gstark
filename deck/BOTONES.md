@@ -18,6 +18,7 @@ Se pega en el campo **Key down**. **Key up** se deja vacío.
 |---|---|
 | stark · mantenimiento | `[t("stark-mantenimiento"),k(Return)]` |
 | stark · nuevo | `[t("stark-nuevo"),k(Return)]` |
+| stark · actualizar | `[t("stark-actualizar"),k(Return)]` |
 
 Ojo: `Return` va con mayúscula. Con minúscula, OpenDeck marca error de sintaxis.
 
@@ -44,6 +45,7 @@ Un botón por comando. En los dos, **Press Enter** activado.
 |---|---|
 | stark · mantenimiento | `stark-mantenimiento` |
 | stark · nuevo | `stark-nuevo` |
+| stark · actualizar | `stark-actualizar` |
 
 ---
 
@@ -53,7 +55,7 @@ Un botón por comando. En los dos, **Press Enter** activado.
 |---|---|---|
 | `stark-mantenimiento` | Proyecto que ya existe y NO tiene stark. Le pega la herramienta y blinda el `.gitignore`. | **Dentro** del proyecto |
 | `stark-nuevo` | Arrancar un proyecto desde cero. Pregunta el nombre, crea la carpeta, le corta el `.git` a stark e inicia tu repo. | En la carpeta **contenedora** |
-| `stark-actualizar` | *(pendiente)* Proyecto con stark viejo: baja los cambios, limpia lo obsoleto y lo saca del repo si estaba commiteado. | Dentro del proyecto |
+| `stark-actualizar` | Proyecto con stark viejo: actualiza la herramienta, limpia zombies, la saca del repo si estaba commiteada y ofrece sellos RDD retroactivos. Todo lo delicado pregunta antes (Enter = no). | Dentro del proyecto |
 
 Los dos preguntan lo que necesitan, así que ambos botones llevan Enter. No hay que
 teclear nada después de picar.

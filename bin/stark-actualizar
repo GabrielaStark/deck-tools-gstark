@@ -1,0 +1,279 @@
+#!/usr/bin/env bash
+#
+# stark-actualizar — actualiza la herramienta stark en un proyecto que ya la tiene,
+# la saca del repo si estaba commiteada, y pone al día el candado RDD.
+#
+# POR QUÉ EXISTE (y en qué se distingue de stark-mantenimiento)
+#   stark-mantenimiento asume un proyecto SIN stark. Este asume un proyecto con una
+#   versión VIEJA, que trae tres problemas que copiar encima no resuelve:
+#     1. Zombies: archivos que stark viejo tenía y el nuevo ya no. Se quedan en disco
+#        contradiciendo a los nuevos y Claude Code los lee todos. Se detectan
+#        comparando contra el stark recién bajado y SOLO si hay sobrantes se pregunta.
+#     2. Herramienta commiteada: .gitignore no des-rastrea lo ya rastreado. Si stark
+#        viejo se estaba subiendo al repo, hay que sacarlo con git rm --cached y
+#        commitearlo — con confirmación, porque reescribe el índice.
+#     3. Sellos RDD: los proyectos pre-RDD aprobaron sus documentos sin sello, y el
+#        stark nuevo bloquea la fase siguiente si el documento anterior no lo tiene.
+#        Se ofrecen sellos retroactivos, documento por documento, con nombre del
+#        aprobador. Sellar es Python local: cero tokens, cero red.
+#
+# ES EL ÚNICO BOTÓN QUE BORRA Y QUE TOCA EL ÍNDICE DE GIT.
+#   Por eso todo lo destructivo pide confirmación explícita. Enter a secas = NO.
+#
+# USO
+#   Te paras en el proyecto (o cualquier subcarpeta) y lo corres sin argumentos.
+#
+# PORTABILIDAD (Ubuntu y macOS)
+#   bash 3.2, sin arrays vacíos bajo `set -u`, sin `cp -r origen/.` (usa tar).
+
+set -euo pipefail
+
+REPO_STARK="https://github.com/GabrielaStark/stark.git"
+
+IGNORAR="
+.claude/
+templates/
+docs/documentacion/
+docs/features/README.md
+LICENSE.stark
+"
+
+ok()    { printf '✅ %s\n' "$*"; }
+info()  { printf '   %s\n' "$*"; }
+aviso() { printf '⚠️  %s\n' "$*"; }
+error() { printf '❌ %s\n' "$*" >&2; exit 1; }
+
+confirmar() {  # confirmar "pregunta" → 0 si la respuesta es sí. Enter = NO.
+  printf '   %s [s/N] › ' "$1"
+  read -r R
+  case "$R" in s|S|si|SI|Si|sí|Sí) return 0 ;; *) return 1 ;; esac
+}
+
+copiar_contenido() {
+  ( cd "$1" && tar cf - . ) | ( cd "$2" && tar xf - )
+}
+
+# ── 1. Piso firme ─────────────────────────────────────────────────────────────
+command -v git >/dev/null 2>&1 || error "no encuentro git en el PATH."
+
+if ! RAIZ=$(git rev-parse --show-toplevel 2>/dev/null); then
+  error "aquí no hay repositorio git ($(pwd)). Párate dentro del proyecto."
+fi
+cd "$RAIZ"
+
+# Este botón es para proyectos que YA tienen stark. Si no hay rastro, el botón
+# correcto es stark-mantenimiento (mismo resultado sin preguntas de migración).
+if [ ! -d .claude ] && [ ! -d templates ] && ! git ls-files .claude templates | grep -q .; then
+  error "este proyecto no tiene stark (ni en disco ni commiteado).
+   El botón para instalarlo por primera vez es: stark-mantenimiento"
+fi
+
+printf '\n🔄 stark-actualizar → %s\n\n' "$RAIZ"
+
+# ── 2. Baja el stark nuevo a un temporal (aún no toca nada) ───────────────────
+TMP=$(mktemp -d)
+trap 'rm -rf "$TMP"' EXIT
+
+info "bajando stark…"
+git clone --depth 1 --quiet "$REPO_STARK" "$TMP/stark" 2>/dev/null \
+  || error "no pude clonar stark. ¿Hay internet?"
+
+# ── 3. Zombies: lo que tienes en disco y stark nuevo ya no trae ───────────────
+# Se compara ANTES de copiar. Solo dentro de .claude/ y templates/ — el resto del
+# proyecto es intocable. Si el archivo no existe en el stark nuevo, sobra.
+ZOMBIES=""
+NUM_ZOMBIES=0
+for base in .claude templates; do
+  [ -d "$base" ] || continue
+  while IFS= read -r f; do
+    [ -n "$f" ] || continue
+    if [ ! -f "$TMP/stark/$f" ]; then
+      ZOMBIES="${ZOMBIES}${f}
+"
+      NUM_ZOMBIES=$((NUM_ZOMBIES + 1))
+    fi
+  done <<EOF
+$(find "$base" -type f | sed 's|^\./||')
+EOF
+done
+
+if [ "$NUM_ZOMBIES" -gt 0 ]; then
+  aviso "hay $NUM_ZOMBIES archivo(s) que el stark nuevo ya no trae:"
+  printf '%s' "$ZOMBIES" | while IFS= read -r f; do [ -n "$f" ] && info "· $f"; done
+  info ""
+  info "Si son de stark viejo, estorban: Claude Code los lee y contradicen a los"
+  info "nuevos. Si alguno es TUYO (un agente o skill propio), di que no y bórralos"
+  info "a mano tú, dejando los tuyos."
+  if confirmar "¿Borro esos $NUM_ZOMBIES archivo(s)?"; then
+    printf '%s' "$ZOMBIES" | while IFS= read -r f; do
+      [ -n "$f" ] && rm -f "$f"
+    done
+    # Carpetas que quedaron vacías tras la limpia (find -depth las procesa de
+    # adentro hacia afuera; rmdir solo borra si están vacías).
+    find .claude templates -depth -type d -empty -exec rmdir {} \; 2>/dev/null || true
+    ok "zombies eliminados"
+  else
+    aviso "los dejé. Revísalos a mano — pueden contradecir al stark nuevo."
+  fi
+else
+  ok "sin zombies: nada de tu stark viejo sobra en el nuevo"
+fi
+
+# ── 4. Copia el stark nuevo encima ────────────────────────────────────────────
+mkdir -p .claude templates docs/features docs/documentacion
+copiar_contenido "$TMP/stark/.claude"   "$RAIZ/.claude"
+copiar_contenido "$TMP/stark/templates" "$RAIZ/templates"
+cp "$TMP/stark/docs/documentacion/"*.md   docs/documentacion/
+cp "$TMP/stark/docs/features/README.md"   docs/features/
+cp "$TMP/stark/LICENSE"                   LICENSE.stark
+ok "herramienta actualizada a la última versión"
+
+# ── 5. Blinda el .gitignore ───────────────────────────────────────────────────
+touch .gitignore
+if [ -s .gitignore ] && [ "$(tail -c1 .gitignore | wc -l)" -eq 0 ]; then
+  echo >> .gitignore
+fi
+
+FALTANTES=""
+NUM_FALTANTES=0
+while IFS= read -r entrada; do
+  [ -n "$entrada" ] || continue
+  if ! grep -qxF "$entrada" .gitignore; then
+    FALTANTES="${FALTANTES}${entrada}
+"
+    NUM_FALTANTES=$((NUM_FALTANTES + 1))
+  fi
+done <<EOF
+$IGNORAR
+EOF
+
+if [ "$NUM_FALTANTES" -gt 0 ]; then
+  {
+    echo
+    echo "# Herramienta stark: vive en el disco, no en el repo. Este repo es el"
+    echo "# PROYECTO, no el framework que lo construyó. Agregado por stark-actualizar."
+    printf '%s' "$FALTANTES"
+  } >> .gitignore
+  ok ".gitignore blindado ($NUM_FALTANTES entrada(s) nueva(s))"
+else
+  ok ".gitignore ya estaba blindado"
+fi
+
+# ── 6. Saca la herramienta del repo si estaba commiteada ─────────────────────
+# El punto entero de la migración: .gitignore no des-rastrea lo ya rastreado — sin
+# este paso, stark viejo sigue viajando en cada push para siempre.
+RASTREADOS=$(git ls-files .claude templates docs/documentacion docs/features/README.md LICENSE.stark 2>/dev/null || true)
+if [ -n "$RASTREADOS" ]; then
+  NUM_RASTREADOS=$(printf '%s\n' "$RASTREADOS" | grep -c . || true)
+  printf '\n'
+  aviso "la herramienta está COMMITEADA en este repo ($NUM_RASTREADOS archivo(s)):"
+  printf '%s\n' "$RASTREADOS" | head -8 | while IFS= read -r f; do info "· $f"; done
+  [ "$NUM_RASTREADOS" -gt 8 ] && info "· … y $((NUM_RASTREADOS - 8)) más"
+  info ""
+  info "Los saco del REPO, no del disco (git rm --cached): siguen en tu máquina y"
+  info "los agentes funcionan igual. En el siguiente push el repo va sin stark."
+  if confirmar "¿Los saco del repo y commiteo?"; then
+    printf '%s\n' "$RASTREADOS" | while IFS= read -r f; do
+      git rm -r -q --cached "$f" 2>/dev/null || true
+    done
+    git add .gitignore
+    git commit -q -m "stark: herramienta fuera del repo
+
+La herramienta (.claude/, templates/, docs/documentacion/) vive en el disco
+y se actualiza con stark-actualizar; el repo es el proyecto, no el framework
+que lo construyó. Los archivos siguen en disco: solo dejan de versionarse."
+    ok "herramienta fuera del repo (commit hecho; se aplica al remoto en tu siguiente push)"
+  else
+    aviso "la dejé commiteada. El repo seguirá cargando stark en cada push."
+  fi
+else
+  ok "la herramienta no está commiteada: el repo ya estaba limpio"
+fi
+
+# ── 7. Sellos RDD retroactivos ────────────────────────────────────────────────
+# El stark viejo no tenía sellos. El nuevo verifica el sello del documento anterior
+# antes de cada fase: sin esto, /stark-design dirá "requirements no aprobado" aunque
+# se haya aprobado hace meses. Sellar es Python local: cero tokens, cero red.
+printf '\n'
+if ! command -v python3 >/dev/null 2>&1; then
+  aviso "no hay python3: me salto los sellos RDD. Instálalo y sella con:"
+  info "python3 .claude/scripts/sello.py sellar-doc <documento> --por \"Tu Nombre\""
+else
+  # Candidatos: los artefactos que las fases verifican. Solo los que existen y
+  # aún no tienen receipt válido.
+  CANDIDATOS=""
+  for doc in docs/requirements.md docs/design.md docs/tasks.md \
+             docs/features/*/requirements.md docs/features/*/design.md docs/features/*/tasks.md; do
+    [ -f "$doc" ] || continue
+    if ! python3 .claude/scripts/sello.py verificar-doc "$doc" >/dev/null 2>&1; then
+      CANDIDATOS="${CANDIDATOS}${doc}
+"
+    fi
+  done
+
+  if [ -z "$CANDIDATOS" ]; then
+    ok "sellos RDD: todos los documentos existentes ya están sellados (o no hay specs)"
+  else
+    NUM_CANDIDATOS=$(printf '%s' "$CANDIDATOS" | grep -c . || true)
+    aviso "hay $NUM_CANDIDATOS documento(s) de spec SIN sello RDD:"
+    printf '%s' "$CANDIDATOS" | while IFS= read -r d; do [ -n "$d" ] && info "· $d"; done
+    info ""
+    info "El stark nuevo bloquea cada fase si el documento anterior no está sellado."
+    info "Sellar deja constancia de la aprobación que ya diste (local, cero tokens)."
+    if confirmar "¿Sellamos los que TÚ ya aprobaste? (te pregunto uno por uno)"; then
+      printf '   ¿A nombre de quién van los sellos? › '
+      read -r APROBADOR
+      [ -n "$APROBADOR" ] || error "sin nombre no hay sello."
+      SELLADOS=0
+      # La lista viaja por el descriptor 3, no por stdin: si fuera por stdin, los
+      # `read` de confirmar() se comerían los nombres de documento como respuestas.
+      while IFS= read -r doc <&3; do
+        [ -n "$doc" ] || continue
+        if confirmar "Sello $doc — ¿tú ya lo aprobaste?"; then
+          if python3 .claude/scripts/sello.py sellar-doc "$doc" --por "$APROBADOR" >/dev/null 2>&1; then
+            ok "sellado: $doc"
+            SELLADOS=$((SELLADOS + 1))
+          else
+            aviso "no pude sellar $doc — séllalo a mano y mira el error:"
+            info "python3 .claude/scripts/sello.py sellar-doc $doc --por \"$APROBADOR\""
+          fi
+        else
+          info "sin sello: $doc (la fase que lo necesite lo va a pedir)"
+        fi
+      done 3<<EOF
+$CANDIDATOS
+EOF
+      if [ "$SELLADOS" -gt 0 ]; then
+        info ""
+        info "Los sellos modifican los docs y crean receipts en docs/.stark/ —"
+        info "commitéalos con tu siguiente commit (git add docs/ && git commit)."
+      fi
+    else
+      info "sin sellos. Cuando una fase te bloquee, sella ese documento:"
+      info "python3 .claude/scripts/sello.py sellar-doc <documento> --por \"Tu Nombre\""
+    fi
+  fi
+fi
+
+# ── 8. Cierre: la prueba de fuego ─────────────────────────────────────────────
+printf '\n'
+RESTO=$(git status --porcelain | grep -Ev '^\?\? (docs/|LICENSE\.stark)' | grep -E '\.claude|templates' || true)
+if [ -z "$RESTO" ]; then
+  ok "la herramienta es invisible para git."
+else
+  aviso "git aún ve piezas de la herramienta — enséñame esto:"
+  printf '%s\n' "$RESTO" | head -10
+fi
+
+cat <<'FIN'
+
+── stark al día. Siguiente paso ──────────────────────────────
+
+  Abre Claude Code y sigue donde ibas:
+    · a medio build   →  /stark-build   (retoma por los [x] del tasks)
+    · entre fases     →  el comando de la fase que sigue
+
+  Tu avance no se pierde: vive en tus documentos, no en la
+  herramienta.
+──────────────────────────────────────────────────────────────
+FIN

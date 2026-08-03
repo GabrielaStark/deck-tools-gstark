@@ -57,7 +57,7 @@ en el disco, nunca en el repo del proyecto.**
 |---|---|---|
 | `stark-mantenimiento` | Proyecto que ya existe y no tiene stark. Le pega la herramienta y blinda el `.gitignore`. Te paras **dentro** del proyecto. | ✅ |
 | `stark-nuevo` | Arrancar un proyecto desde cero. Pregunta el nombre, clona stark, le corta el `.git` para que nunca puedas pushear al repo de stark, e inicia tu repo. Si tienes `gh`, ofrece crear el repo en GitHub y pushear. Te paras en la carpeta **contenedora**. | ✅ |
-| `stark-actualizar` | Proyecto con una versión vieja de stark. Baja los cambios de la herramienta, borra lo obsoleto y — si stark estaba commiteado — lo saca del repo y deja el ignore puesto. Es el único que borra: pide confirmación. | ⏳ pendiente |
+| `stark-actualizar` | Proyecto con una versión vieja de stark. Actualiza la herramienta, detecta y borra lo obsoleto (zombies), la saca del repo si estaba commiteada, y ofrece sellos RDD retroactivos para las specs aprobadas antes de que existieran los sellos. Es el único que borra y toca el índice de git: todo lo delicado pregunta antes, y Enter a secas significa NO. | ✅ |
 
 ### Por qué la herramienta no se sube al repo
 
