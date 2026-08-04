@@ -33,6 +33,16 @@ cd ~/deck-tools && git pull
 No hay que reinstalar. El instalador deja **enlaces**, no copias: al actualizar el
 repo, los comandos de la máquina cambian solos.
 
+**La única excepción: cuando el repo trae un comando nuevo.** Ese todavía no tiene
+enlace en tu máquina, así que hay que correr el instalador otra vez:
+
+```bash
+cd ~/deck-tools && git pull && ./instalar.sh
+```
+
+Correrlo de más no hace daño: rehace los enlaces que ya estaban y agrega el que falta.
+Si dudas, usa siempre esta línea.
+
 ---
 
 ## Qué hay adentro
