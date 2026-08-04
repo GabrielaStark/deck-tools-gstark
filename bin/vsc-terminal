@@ -1,0 +1,183 @@
+#!/usr/bin/env bash
+#
+# vsc-terminal — abre VS Code en el proyecto donde estás parada y te deja la
+#                terminal integrada lista, sin soltar el teclado.
+#
+# POR QUÉ EXISTE
+#   El botón del deck teclea en TU terminal, así que el script sabe dónde estás.
+#   Con eso hace dos cosas seguidas:
+#     1. Abre VS Code en esa carpeta (si ya la tenías abierta, solo la enfoca).
+#     2. Le pica el atajo de la terminal integrada, para que la terminal salga
+#        ya parada en el proyecto — sin cd, sin arrastrar carpetas a la ventana.
+#
+# QUÉ CARPETA ABRE
+#   Si estás dentro de un repo git, abre la RAÍZ del repo — aunque estés tres
+#   subcarpetas adentro, que es lo que casi siempre quieres. Si no hay repo, abre
+#   la carpeta donde estás. Con --aqui abre siempre la carpeta actual.
+#
+# USO
+#   vsc-terminal                  → el proyecto donde estás
+#   vsc-terminal ~/Documentos/x   → esa carpeta
+#   vsc-terminal --aqui           → la carpeta actual, aunque haya repo arriba
+#   vsc-terminal --sin-atajo      → solo abre VS Code, no pica el atajo
+#
+# EL ATAJO ES LO ÚNICO FRÁGIL
+#   Abrir VS Code funciona siempre. Mandarle el atajo depende de que el sistema
+#   deje simular teclas: en macOS hay que dar permiso de Accesibilidad, y en
+#   Wayland (Ubuntu moderno) sencillamente no se puede sin un daemon aparte.
+#   Cuando no se puede, el script te lo dice y no falla — y para ese caso existe
+#   el otro botón, el de atajo puro, que sí lo manda el propio deck.
+#   Ver deck/BOTONES.md.
+#
+# PORTABILIDAD (Ubuntu y macOS)
+#   bash 3.2 (el de fábrica en macOS): sin arrays, sin ${var^^}, sin `local -n`.
+#   Lo que cambia entre sistemas está aislado en abrir_terminal_integrada().
+
+set -eu
+
+ok()    { printf '✅ %s\n' "$*"; }
+info()  { printf '   %s\n' "$*"; }
+aviso() { printf '⚠️  %s\n' "$*"; }
+error() { printf '❌ %s\n' "$*" >&2; exit 1; }
+
+# ── 1. Argumentos ─────────────────────────────────────────────────────────────
+DESTINO=""
+FORZAR_AQUI=0
+MANDAR_ATAJO=1
+
+while [ $# -gt 0 ]; do
+  case "$1" in
+    --aqui)      FORZAR_AQUI=1 ;;
+    --sin-atajo) MANDAR_ATAJO=0 ;;
+    -h|--help)
+      sed -n '2,30p' "$0" | sed 's/^# \{0,1\}//'
+      exit 0
+      ;;
+    -*)  error "opción que no conozco: $1   (prueba: vsc-terminal --help)" ;;
+    *)
+      [ -z "$DESTINO" ] || error "solo acepto una carpeta, y ya me diste: $DESTINO"
+      DESTINO="$1"
+      ;;
+  esac
+  shift
+done
+
+# ── 2. Qué carpeta abrimos ────────────────────────────────────────────────────
+if [ -n "$DESTINO" ]; then
+  [ -d "$DESTINO" ] || error "esa carpeta no existe: $DESTINO"
+  CARPETA=$(cd "$DESTINO" && pwd)
+elif [ "$FORZAR_AQUI" -eq 1 ]; then
+  CARPETA="$PWD"
+elif RAIZ=$(git rev-parse --show-toplevel 2>/dev/null); then
+  # Estás dentro de un repo: abrimos la raíz, no la subcarpeta suelta.
+  CARPETA="$RAIZ"
+else
+  CARPETA="$PWD"
+fi
+
+# ── 3. ¿Dónde está el comando `code`? ─────────────────────────────────────────
+# Se prueban las variantes en orden. VSC_CMD manda sobre todo, por si usas otra.
+CODE=""
+for candidato in ${VSC_CMD:-} code code-insiders codium cursor windsurf; do
+  if command -v "$candidato" >/dev/null 2>&1; then
+    CODE=$(command -v "$candidato")
+    break
+  fi
+done
+
+# macOS: si instalaste VS Code arrastrando el .app, el comando `code` no queda en
+# el PATH hasta que lo pides desde la paleta. El binario sí existe adentro del .app.
+if [ -z "$CODE" ] && [ -x "/Applications/Visual Studio Code.app/Contents/Resources/app/bin/code" ]; then
+  CODE="/Applications/Visual Studio Code.app/Contents/Resources/app/bin/code"
+fi
+
+if [ -z "$CODE" ]; then
+  error "no encuentro el comando \`code\` en el PATH.
+   En macOS: abre VS Code → Cmd+Shift+P → «Shell Command: Install 'code' command in PATH».
+   En Ubuntu: viene incluido al instalar VS Code (.deb o snap).
+   ¿Usas otro editor compatible? Corre:  VSC_CMD=mi-comando vsc-terminal"
+fi
+
+# ── 4. ¿Ya estaba abierto? ────────────────────────────────────────────────────
+# Importa solo para saber cuánto esperar antes de mandar el atajo: arrancar en frío
+# tarda varios segundos, y una tecla mandada antes de tiempo se pierde en el vacío.
+if pgrep -f "Visual Studio Code|/usr/share/code|code-insiders|VSCodium" >/dev/null 2>&1; then
+  ESPERA="${VSC_ESPERA:-1}"
+else
+  ESPERA="${VSC_ESPERA:-4}"
+fi
+
+printf '\n🟦 VS Code → %s\n\n' "$CARPETA"
+
+"$CODE" "$CARPETA" || error "VS Code no quiso abrir esa carpeta."
+ok "carpeta abierta"
+
+[ "$MANDAR_ATAJO" -eq 1 ] || exit 0
+
+# ── 5. Picarle el atajo de la terminal integrada ──────────────────────────────
+# Ctrl+` (toggle) es el atajo de fábrica y es el MISMO en Ubuntu y en macOS.
+# Cada sistema simula teclas con su propia herramienta; eso es todo lo que cambia.
+abrir_terminal_integrada() {
+  case "$(uname -s)" in
+
+    Darwin)
+      # System Events necesita permiso de Accesibilidad para la app desde la que
+      # corres esto (Terminal, iTerm…). La primera vez macOS lo pide solo.
+      if osascript >/dev/null 2>&1 <<'APPLESCRIPT'
+tell application "Visual Studio Code" to activate
+delay 0.3
+tell application "System Events" to keystroke "`" using control down
+APPLESCRIPT
+      then
+        return 0
+      fi
+      aviso "macOS no me dejó simular la tecla."
+      info  "Ajustes → Privacidad y seguridad → Accesibilidad → activa tu terminal."
+      return 1
+      ;;
+
+    Linux)
+      # Wayland aísla la entrada por diseño: xdotool escribe en X11 y aquí no llega.
+      if [ "${XDG_SESSION_TYPE:-}" = "wayland" ] || [ -n "${WAYLAND_DISPLAY:-}" ]; then
+        if command -v ydotool >/dev/null 2>&1; then
+          # Códigos del kernel: 29 = ctrl, 41 = la tecla del backtick. :1 baja, :0 sube.
+          ydotool key 29:1 41:1 41:0 29:0 >/dev/null 2>&1 && return 0
+          aviso "ydotool está instalado pero no respondió (suele faltar el daemon ydotoold)."
+        else
+          aviso "estás en Wayland: ningún programa puede simular teclas sin permisos aparte."
+        fi
+        return 1
+      fi
+
+      if command -v xdotool >/dev/null 2>&1; then
+        xdotool search --onlyvisible --class 'code' windowactivate --sync >/dev/null 2>&1 || true
+        xdotool key --clearmodifiers ctrl+grave >/dev/null 2>&1 && return 0
+        aviso "xdotool no logró mandar la tecla."
+        return 1
+      fi
+
+      aviso "no tengo xdotool para simular la tecla."
+      info  "Se instala con:  sudo apt install xdotool"
+      return 1
+      ;;
+
+    *)
+      aviso "no sé simular teclas en $(uname -s)."
+      return 1
+      ;;
+  esac
+}
+
+info "esperando a que VS Code tome el foco…"
+sleep "$ESPERA"
+
+if abrir_terminal_integrada; then
+  ok "terminal integrada abierta, parada en el proyecto"
+else
+  printf '\n'
+  info "VS Code quedó abierto igual. Para la terminal, cualquiera de estas:"
+  info "  · pica Ctrl+\` tú misma"
+  info "  · usa el botón «vsc · terminal» del deck (ese atajo lo manda el deck,"
+  info "    y a ese sí le entra Wayland y macOS sin permisos extra)"
+  info "  · deck/BOTONES.md lo explica"
+fi

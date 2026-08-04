@@ -4,8 +4,8 @@ Los comandos que disparan mis botones del Stream Deck. Mismo comportamiento en
 Ubuntu y en macOS: clono este repo, corro el instalador, y los botones hacen
 exactamente lo mismo en cualquier máquina.
 
-De momento son los botones de **stark** (el framework SDD). El repo está armado
-para que quepan otros después.
+Están los botones de **stark** (el framework SDD) y el de **VS Code**, que abre el
+editor y su terminal en el proyecto donde estés parada.
 
 ---
 
@@ -43,7 +43,8 @@ deck-tools/
 ├── bin/                 ← los comandos que teclean los botones
 │   ├── stark-mantenimiento
 │   ├── stark-nuevo
-│   └── stark-actualizar
+│   ├── stark-actualizar
+│   └── vsc-terminal
 └── deck/
     └── BOTONES.md       ← el texto exacto de cada botón, por sistema
 ```
@@ -77,6 +78,30 @@ trabajando igual. La herramienta se baja aparte, siempre en su última versión.
 Los comandos clonan stark en una carpeta temporal, copian solo las carpetas de la
 herramienta y borran el temporal. El único `.git` que existe en tu proyecto es el
 tuyo — un `git push` siempre va a **tu** repo, jamás al de stark.
+
+---
+
+## El botón de VS Code
+
+| Comando | Cuándo | Estado |
+|---|---|---|
+| `vsc-terminal` | Estás en una terminal, dentro del proyecto, y quieres el editor abierto ahí con su terminal integrada lista. Abre la **raíz** del repo aunque estés en una subcarpeta. | ✅ |
+
+Hace dos cosas seguidas: abre VS Code en la carpeta (si ya la tenías abierta, solo la
+enfoca) y le pica ``Ctrl+` `` para sacar la terminal integrada — que nace parada en el
+proyecto, sin `cd` ni arrastrar carpetas a la ventana.
+
+Lo segundo es lo único frágil: simular una tecla depende del sistema. En **Wayland**
+ningún programa puede hacerlo sin permisos aparte, y en **macOS** hay que darle
+Accesibilidad a tu terminal. Cuando no se puede, el script lo dice y no falla: VS Code
+queda abierto igual.
+
+Por eso hay un **segundo botón, de atajo puro**, para cuando VS Code ya está abierto:
+ese manda la tecla desde el deck, así que le entra a Wayland y a macOS sin permisos
+extra. Los dos están en [`deck/BOTONES.md`](deck/BOTONES.md), junto con el atajo a
+prueba de teclados en español.
+
+Si usas VSCodium, Cursor u otro derivado: `VSC_CMD=tu-comando vsc-terminal`.
 
 ---
 
