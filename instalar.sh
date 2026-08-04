@@ -66,6 +66,23 @@ fi
 
 printf '\n'
 
+# ── Extra de Linux: el clic derecho de Archivos (Nautilus) ────────────────────
+# Es el único camino que sabe SOLO en qué carpeta estás: Nautilus se lo dice al
+# script en una variable de entorno. Un botón del deck no puede saberlo.
+# En macOS no aplica: no hay Nautilus. Si no hay Nautilus, no pasa nada.
+if [ -d "$REPO/nautilus" ] && command -v nautilus >/dev/null 2>&1; then
+  SCRIPTS_NAUTILUS="$HOME/.local/share/nautilus/scripts"
+  mkdir -p "$SCRIPTS_NAUTILUS"
+  for script in "$REPO"/nautilus/*; do
+    [ -f "$script" ] || continue
+    chmod +x "$script"
+    ln -sf "$script" "$SCRIPTS_NAUTILUS/$(basename "$script")"
+    ok "clic derecho en Archivos → Scripts → «$(basename "$script")»"
+  done
+  info "Si no aparece en el menú: cierra Nautilus con  nautilus -q  y vuelve a abrirlo."
+  printf '\n'
+fi
+
 # ¿El destino está en el PATH? En macOS ~/.local/bin normalmente NO viene incluido.
 case ":$PATH:" in
   *":$DESTINO:"*)

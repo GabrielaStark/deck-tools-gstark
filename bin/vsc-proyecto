@@ -1,0 +1,128 @@
+#!/usr/bin/env bash
+#
+# vsc-proyecto — BOTÓN 1: elige un proyecto y ábrelo en VS Code.
+#
+# POR QUÉ NO ADIVINA LA CARPETA
+#   Este es el único comando del repo que NO se teclea en una terminal: lo lanza el
+#   deck directamente, así que no tiene un "dónde estoy parada" que leer. Y no puede
+#   sacarlo del explorador de Archivos: GNOME no expone en ninguna parte la carpeta
+#   que tienes abierta en Nautilus — no hay API, no es que falte configurarlo.
+#
+#   Así que te lo pregunta con un selector de carpetas. Se abre parado donde
+#   estuviste la última vez, así que en la práctica es un clic.
+#
+#   ¿Quieres que sí adivine, sin preguntarte nada? Entonces no uses el botón: dentro
+#   de la carpeta, clic derecho → Scripts → «Abrir en VS Code». Ahí el explorador sí
+#   le dice al script dónde estás. Se instala con ./instalar.sh.
+#
+# QUÉ HACE, YA CON LA CARPETA
+#   Le pasa la carpeta a vsc-terminal, que hace el trabajo: abre VS Code en la raíz
+#   del proyecto e intenta sacar la terminal integrada.
+#
+# CÓMO SE CONFIGURA EN EL DECK
+#   Este SÍ va como acción de "ejecutar comando", con la ruta completa:
+#       ~/.local/bin/vsc-proyecto
+#   La regla de oro del repo (nunca "ejecutar comando") existe porque los otros
+#   scripts necesitan saber en qué carpeta estás parada, y esa acción corre en el
+#   directorio del software del deck. Este no lo necesita: tú se lo dices en el
+#   selector. Por eso es la excepción, y la única.
+#
+# DÓNDE EMPIEZA EL SELECTOR
+#   1. La carpeta que contiene al último proyecto que abriste (para ver a sus hermanos).
+#   2. Si es la primera vez: VSC_PROYECTOS si la exportaste, o ~/Documentos/STARK,
+#      o ~/Documentos, o tu carpeta personal — la primera que exista.
+
+set -eu
+
+# El deck lanza esto fuera de una terminal de login: el PATH puede venir pelón y sin
+# ~/.local/bin (donde vive vsc-terminal) ni /snap/bin (donde vive code si es snap).
+PATH="$HOME/.local/bin:/usr/local/bin:/usr/bin:/bin:/snap/bin:$PATH"
+export PATH
+
+# ── Avisar sin terminal ───────────────────────────────────────────────────────
+# Nadie va a ver un printf: no hay terminal donde se imprima. Los errores tienen que
+# salir en pantalla o no existen.
+avisar() {
+  printf '❌ %s\n' "$*" >&2
+  if command -v zenity >/dev/null 2>&1; then
+    zenity --error --title="VS Code" --text="$*" 2>/dev/null || true
+  elif command -v kdialog >/dev/null 2>&1; then
+    kdialog --error "$*" 2>/dev/null || true
+  elif command -v notify-send >/dev/null 2>&1; then
+    notify-send "VS Code" "$*" 2>/dev/null || true
+  fi
+  exit 1
+}
+
+# ── Hermano de al lado: vsc-terminal ──────────────────────────────────────────
+# $0 casi siempre es el symlink de ~/.local/bin. Hay que seguirlo hasta el archivo
+# real para encontrar a vsc-terminal, que vive junto a él dentro del repo.
+# PORTABILIDAD: `readlink -f` no existe en el readlink de macOS; este bucle sí.
+RUTA="$0"
+while [ -L "$RUTA" ]; do
+  DESTINO_ENLACE=$(readlink "$RUTA")
+  case "$DESTINO_ENLACE" in
+    /*) RUTA="$DESTINO_ENLACE" ;;
+    *)  RUTA="$(dirname "$RUTA")/$DESTINO_ENLACE" ;;
+  esac
+done
+BIN=$(cd "$(dirname "$RUTA")" && pwd)
+VSC_TERMINAL="$BIN/vsc-terminal"
+
+[ -x "$VSC_TERMINAL" ] || avisar "no encuentro vsc-terminal junto a este script.
+Corre ./instalar.sh otra vez en la carpeta del repo."
+
+# ── ¿Dónde abrimos el selector? ───────────────────────────────────────────────
+CACHE="${XDG_CACHE_HOME:-$HOME/.cache}/deck-tools"
+ULTIMO="$CACHE/ultimo-proyecto"
+
+INICIO=""
+if [ -f "$ULTIMO" ]; then
+  GUARDADO=$(cat "$ULTIMO" 2>/dev/null || true)
+  # La contenedora, no el proyecto: así ves a sus hermanos y cambias de uno a otro.
+  [ -n "$GUARDADO" ] && [ -d "$GUARDADO" ] && INICIO=$(dirname "$GUARDADO")
+fi
+
+if [ -z "$INICIO" ]; then
+  for candidato in ${VSC_PROYECTOS:-} "$HOME/Documentos/STARK" "$HOME/Documents/STARK" \
+                   "$HOME/Documentos" "$HOME/Documents" "$HOME"; do
+    if [ -d "$candidato" ]; then INICIO="$candidato"; break; fi
+  done
+fi
+
+# ── El selector ───────────────────────────────────────────────────────────────
+# Devuelve la carpeta por stdout. Código 1 = le picaste Cancelar (no es error).
+elegir_carpeta() {
+  if command -v zenity >/dev/null 2>&1; then
+    zenity --file-selection --directory \
+           --title="¿Qué proyecto abro en VS Code?" \
+           --filename="$INICIO/" 2>/dev/null
+  elif command -v kdialog >/dev/null 2>&1; then
+    kdialog --getexistingdirectory "$INICIO" 2>/dev/null
+  elif command -v yad >/dev/null 2>&1; then
+    yad --file --directory --filename="$INICIO/" 2>/dev/null
+  else
+    return 127
+  fi
+}
+
+set +e
+CARPETA=$(elegir_carpeta)
+SALIDA=$?
+set -e
+
+case "$SALIDA" in
+  0)   ;;
+  127) avisar "no tengo con qué mostrarte el selector de carpetas.
+Se instala con:  sudo apt install zenity" ;;
+  *)   exit 0 ;;   # cancelaste, y cancelar no es un error
+esac
+
+[ -n "$CARPETA" ] || exit 0
+[ -d "$CARPETA" ] || avisar "esa carpeta no existe: $CARPETA"
+
+# Recordar para la próxima vez.
+mkdir -p "$CACHE"
+printf '%s\n' "$CARPETA" > "$ULTIMO"
+
+exec "$VSC_TERMINAL" "$CARPETA"

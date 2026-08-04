@@ -54,7 +54,10 @@ deck-tools/
 │   ├── stark-mantenimiento
 │   ├── stark-nuevo
 │   ├── stark-actualizar
-│   └── vsc-terminal
+│   ├── vsc-proyecto     ← el botón: selector + abrir en VS Code
+│   └── vsc-terminal     ← el motor: abre VS Code y su terminal en una carpeta
+├── nautilus/            ← el clic derecho de Archivos (solo Linux)
+│   └── Abrir en VS Code
 └── deck/
     └── BOTONES.md       ← el texto exacto de cada botón, por sistema
 ```
@@ -91,25 +94,38 @@ tuyo — un `git push` siempre va a **tu** repo, jamás al de stark.
 
 ---
 
-## El botón de VS Code
+## Los botones de VS Code
 
-| Comando | Cuándo | Estado |
-|---|---|---|
-| `vsc-terminal` | Estás en una terminal, dentro del proyecto, y quieres el editor abierto ahí con su terminal integrada lista. Abre la **raíz** del repo aunque estés en una subcarpeta. | ✅ |
+Son dos, uno por situación:
 
-Hace dos cosas seguidas: abre VS Code en la carpeta (si ya la tenías abierta, solo la
-enfoca) y le pica ``Ctrl+` `` para sacar la terminal integrada — que nace parada en el
-proyecto, sin `cd` ni arrastrar carpetas a la ventana.
+| Botón | Cuándo | Qué hace | Estado |
+|---|---|---|---|
+| `vsc · proyecto` | Quieres abrir un proyecto | Selector de carpetas → VS Code abierto ahí | ✅ |
+| `vsc · terminal` | Ya trabajas en VS Code | Saca la terminal integrada, parada en la raíz del proyecto | ✅ |
 
-Lo segundo es lo único frágil: simular una tecla depende del sistema. En **Wayland**
-ningún programa puede hacerlo sin permisos aparte, y en **macOS** hay que darle
-Accesibilidad a tu terminal. Cuando no se puede, el script lo dice y no falla: VS Code
-queda abierto igual.
+### Por qué el primero te pregunta la carpeta
 
-Por eso hay un **segundo botón, de atajo puro**, para cuando VS Code ya está abierto:
-ese manda la tecla desde el deck, así que le entra a Wayland y a macOS sin permisos
-extra. Los dos están en [`deck/BOTONES.md`](deck/BOTONES.md), junto con el atajo a
-prueba de teclados en español.
+Porque no hay forma de adivinarla: **GNOME no expone en ninguna parte la carpeta que
+tienes abierta en Archivos.** No falta configurar nada, no existe esa API. Y un botón
+del deck no está parado en ningún lado — a diferencia de los de stark, que sí, porque
+los teclea tu terminal.
+
+El selector arranca donde estuviste la última vez, así que es un clic.
+
+**El camino que sí adivina** es el clic derecho: dentro de la carpeta del proyecto,
+**Scripts → «Abrir en VS Code»**. Ahí el explorador le dice al script dónde estás. Lo
+instala `./instalar.sh` cuando detecta Nautilus.
+
+### El segundo botón no es un lujo
+
+El motor (`vsc-terminal`) intenta sacar la terminal él solo, y en Ubuntu con X11 lo
+logra. Pero en **Wayland** ningún programa puede simular teclas sin permisos aparte, y
+en **macOS** hay que darle Accesibilidad a tu terminal. Cuando no puede, lo dice y
+termina bien: VS Code queda abierto igual, y la terminal la saca el segundo botón —
+que sí atraviesa las dos cosas, porque la tecla la manda el deck.
+
+Detalle que ayuda: VS Code recuerda las terminales de cada proyecto. Si la dejaste
+abierta, vuelve sola.
 
 Si usas VSCodium, Cursor u otro derivado: `VSC_CMD=tu-comando vsc-terminal`.
 

@@ -1,0 +1,57 @@
+#!/usr/bin/env bash
+#
+# «Abrir en VS Code» — el clic derecho de Archivos (Nautilus).
+#
+# POR QUÉ EXISTE
+#   Es la versión que SÍ adivina la carpeta. Un botón del deck no puede: nadie le
+#   puede preguntar a Nautilus qué carpeta tienes abierta. Pero un script lanzado
+#   DESDE Nautilus no tiene que preguntar — el propio Nautilus se lo dice en una
+#   variable de entorno.
+#
+# CÓMO SE USA
+#   Estás parada dentro de la carpeta del proyecto → clic derecho en un espacio
+#   vacío → Scripts → «Abrir en VS Code».
+#   Si en vez de eso seleccionas una carpeta y le das clic derecho, abre esa.
+#
+# CÓMO SE INSTALA
+#   Solo: ./instalar.sh lo enlaza en ~/.local/share/nautilus/scripts/.
+#   Si no aparece en el menú, cierra Nautilus con `nautilus -q` y vuelve a abrirlo.
+
+set -eu
+
+PATH="$HOME/.local/bin:/usr/local/bin:/usr/bin:/bin:/snap/bin:$PATH"
+export PATH
+
+# Nautilus habla en URIs (file:///home/gaby/Mi%20proyecto). Hay que quitarle el
+# esquema y devolverle los espacios y acentos que vienen como %20, %C3%B1, etc.
+uri_a_ruta() {
+  printf '%b' "$(printf '%s' "${1#file://}" | sed 's/%\([0-9a-fA-F][0-9a-fA-F]\)/\\x\1/g')"
+}
+
+# 1) ¿Seleccionaste una carpeta? Esa gana.
+# 2) Si no, la carpeta que tienes abierta.
+CARPETA=""
+if [ -n "${NAUTILUS_SCRIPT_SELECTED_FILE_PATHS:-}" ]; then
+  PRIMERA=$(printf '%s' "$NAUTILUS_SCRIPT_SELECTED_FILE_PATHS" | head -1)
+  [ -n "$PRIMERA" ] && [ -d "$PRIMERA" ] && CARPETA="$PRIMERA"
+fi
+
+if [ -z "$CARPETA" ] && [ -n "${NAUTILUS_SCRIPT_CURRENT_URI:-}" ]; then
+  case "$NAUTILUS_SCRIPT_CURRENT_URI" in
+    file://*) CARPETA=$(uri_a_ruta "$NAUTILUS_SCRIPT_CURRENT_URI") ;;
+  esac
+fi
+
+if [ -z "$CARPETA" ] || [ ! -d "$CARPETA" ]; then
+  MSG="No pude saber en qué carpeta estás.
+Pasa si la carpeta no es local (un servidor, la papelera, etc.)."
+  if command -v zenity >/dev/null 2>&1; then
+    zenity --error --title="VS Code" --text="$MSG" 2>/dev/null || true
+  elif command -v notify-send >/dev/null 2>&1; then
+    notify-send "VS Code" "$MSG" 2>/dev/null || true
+  fi
+  printf '%s\n' "$MSG" >&2
+  exit 1
+fi
+
+exec vsc-terminal "$CARPETA"
