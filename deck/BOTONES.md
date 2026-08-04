@@ -39,7 +39,7 @@ Sintaxis útil por si quieres armar otros:
 
 Acción: **Text** (categoría System, viene de fábrica).
 
-Un botón por comando. En los dos, **Press Enter** activado.
+Un botón por comando. En los tres, **Press Enter** activado.
 
 | Botón | Text |
 |---|---|
@@ -57,7 +57,7 @@ Un botón por comando. En los dos, **Press Enter** activado.
 | `stark-nuevo` | Arrancar un proyecto desde cero. Pregunta el nombre, crea la carpeta, le corta el `.git` a stark e inicia tu repo. | En la carpeta **contenedora** |
 | `stark-actualizar` | Proyecto con stark viejo: actualiza la herramienta, limpia zombies, la saca del repo si estaba commiteada y ofrece sellos RDD retroactivos. Todo lo delicado pregunta antes (Enter = no). | Dentro del proyecto |
 
-Los dos preguntan lo que necesitan, así que ambos botones llevan Enter. No hay que
+Los tres preguntan lo que necesitan, así que los tres botones llevan Enter. No hay que
 teclear nada después de picar.
 
 ### Mayúsculas

@@ -217,7 +217,10 @@ else
     ok "sellos RDD: todos los documentos existentes ya están sellados (o no hay specs)"
   else
     NUM_CANDIDATOS=$(printf '%s' "$CANDIDATOS" | grep -c . || true)
-    aviso "hay $NUM_CANDIDATOS documento(s) de spec SIN sello RDD:"
+    # "sin sello VÁLIDO", no "sin sello": aquí caen tanto los que nunca se sellaron
+    # como los que se sellaron y cambiaron después. Son casos distintos y el bucle
+    # de abajo los distingue.
+    aviso "hay $NUM_CANDIDATOS documento(s) de spec sin sello RDD válido:"
     printf '%s' "$CANDIDATOS" | while IFS= read -r d; do [ -n "$d" ] && info "· $d"; done
     info ""
     info "El stark nuevo bloquea cada fase si el documento anterior no está sellado."
@@ -232,12 +235,27 @@ else
       while IFS= read -r doc <&3; do
         [ -n "$doc" ] || continue
         if confirmar "Sello $doc — ¿tú ya lo aprobaste?"; then
-          if python3 .claude/scripts/sello.py sellar-doc "$doc" --por "$APROBADOR" >/dev/null 2>&1; then
+          if SALIDA=$(python3 .claude/scripts/sello.py sellar-doc "$doc" --por "$APROBADOR" 2>&1); then
             ok "sellado: $doc"
             SELLADOS=$((SELLADOS + 1))
           else
-            aviso "no pude sellar $doc — séllalo a mano y mira el error:"
-            info "python3 .claude/scripts/sello.py sellar-doc $doc --por \"$APROBADOR\""
+            # sello.py explica bien por qué se negó, así que se muestra tal cual en
+            # vez de tragárselo. El caso que más cae aquí NO es un sello faltante:
+            # es un documento que YA tenía receipt y cambió después de aprobarse.
+            # Re-sellar PISA esa aprobación, y esa decisión es humana — el script
+            # da el comando, nunca lo corre solo.
+            aviso "no pude sellar $doc:"
+            printf '%s\n' "$SALIDA" | while IFS= read -r l; do info "$l"; done
+            info ""
+            case "$SALIDA" in
+              *"ya tiene receipt"*)
+                info "Ese documento se aprobó y CAMBIÓ después. Re-apruébalo con quien"
+                info "corresponda y sella pisando la aprobación vieja:"
+                info "python3 .claude/scripts/sello.py sellar-doc $doc --por \"$APROBADOR\" --re-sellar" ;;
+              *)
+                info "Resuélvelo y séllalo a mano:"
+                info "python3 .claude/scripts/sello.py sellar-doc $doc --por \"$APROBADOR\"" ;;
+            esac
           fi
         else
           info "sin sello: $doc (la fase que lo necesite lo va a pedir)"

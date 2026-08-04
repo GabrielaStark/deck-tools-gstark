@@ -41,7 +41,9 @@ repo, los comandos de la máquina cambian solos.
 deck-tools/
 ├── instalar.sh          ← deja los comandos de bin/ disponibles en el PATH
 ├── bin/                 ← los comandos que teclean los botones
-│   └── stark-mantenimiento
+│   ├── stark-mantenimiento
+│   ├── stark-nuevo
+│   └── stark-actualizar
 └── deck/
     └── BOTONES.md       ← el texto exacto de cada botón, por sistema
 ```
