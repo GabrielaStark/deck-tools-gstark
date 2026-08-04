@@ -58,15 +58,21 @@ se la lleva el explorador y parece que el botón no hace nada.
 
 **Primero, asígnale una tecla sola en VS Code.** El atajo de fábrica es ``Ctrl+` ``, y
 en teclado español el backtick es tecla muerta: el deck lo manda mal. Se arregla de una
-vez. En VS Code: `Ctrl+Shift+P` → **Preferences: Open Keyboard Shortcuts (JSON)** →
-agrega adentro de los corchetes:
+vez, y por la ventana normal — **no toques el JSON**:
 
-```json
-{ "key": "f6", "command": "workbench.action.terminal.toggleTerminal" }
-```
+1. `Ctrl+K` y luego `Ctrl+S`. Se abre *Atajos de teclado*, con un buscador arriba.
+2. Pega en el buscador: `workbench.action.terminal.toggleTerminal`
+3. Doble clic en la única fila que queda.
+4. Pica **F6** y luego **Enter**.
 
-Guarda y **pruébalo picando F6 tú misma** antes de tocar el deck. Si F6 no te abre la
-terminal, el botón tampoco va a poder. Esto suma, no quita: ``Ctrl+` `` sigue igual.
+Esto suma, no quita: ``Ctrl+` `` sigue funcionando igual.
+
+**Pruébalo picando F6 tú misma** antes de tocar el deck. Si a mano no abre la terminal,
+el botón tampoco va a poder.
+
+> Si alguien te manda editar `keybindings.json` a mano, cuidado con abrir el archivo
+> equivocado: *Default Keybindings* es la lista de fábrica, sale con un candado y es de
+> solo lectura. La ventana de los 4 pasos de arriba no tiene esa trampa.
 
 **Luego, el botón:**
 
